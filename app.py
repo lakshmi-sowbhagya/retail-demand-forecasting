@@ -65,9 +65,10 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 @st.cache_data
-def get_cached_data(custom_file=None):
-    if custom_file is not None:
-        return load_retail_data(custom_file)
+def get_cached_data(file_bytes=None):
+    if file_bytes is not None:
+        import io
+        return load_retail_data(io.BytesIO(file_bytes))
     return load_retail_data()
 
 # ----------------- SIDEBAR CONTROLS -----------------
@@ -90,8 +91,9 @@ with st.sidebar:
                 mime="text/csv",
                 help="Click to download a formatted CSV template to test custom file upload!"
             )
+    file_bytes = uploaded_file.getvalue() if uploaded_file is not None else None
     try:
-        raw_df = get_cached_data(uploaded_file)
+        raw_df = get_cached_data(file_bytes)
     except Exception as e:
         st.error(f"Error reading dataset: {e}")
         raw_df = load_retail_data()

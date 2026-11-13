@@ -7,7 +7,7 @@ import os
 import warnings
 import numpy as np
 import pandas as pd
-from typing import Tuple, List, Optional
+from typing import Tuple, List, Optional, Any
 
 warnings.filterwarnings("ignore")
 
@@ -17,15 +17,22 @@ DEFAULT_DATA_PATH = os.path.join(
     "sample_retail_data.csv"
 )
 
-def load_retail_data(file_path: Optional[str] = None) -> pd.DataFrame:
+def load_retail_data(file_path: Optional[Any] = None) -> pd.DataFrame:
     """
-    Loads retail transaction/demand data from CSV and standardizes schema.
+    Loads retail transaction/demand data from CSV (file path, file-like object, or Streamlit UploadedFile)
+    and standardizes schema.
     """
-    path = file_path or DEFAULT_DATA_PATH
-    if not os.path.exists(path):
-        raise FileNotFoundError(f"Data file not found at: {path}")
-
-    df = pd.read_csv(path)
+    if file_path is None:
+        if not os.path.exists(DEFAULT_DATA_PATH):
+            raise FileNotFoundError(f"Data file not found at: {DEFAULT_DATA_PATH}")
+        df = pd.read_csv(DEFAULT_DATA_PATH)
+    elif isinstance(file_path, (str, os.PathLike)):
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"Data file not found at: {file_path}")
+        df = pd.read_csv(file_path)
+    else:
+        # File-like buffer / Streamlit UploadedFile
+        df = pd.read_csv(file_path)
     df["date"] = pd.to_datetime(df["date"])
 
     # Standardize column naming
