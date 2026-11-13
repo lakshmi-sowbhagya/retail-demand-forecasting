@@ -25,6 +25,8 @@ class ARIMADemandModel:
         self.exog_cols = []
         self.last_date = None
         self.is_fitted = False
+        self.demand_cap = None
+        self.demand_floor = 0.0
 
     def _extract_exog(self, df: pd.DataFrame):
         exog_candidates = ["is_promo", "discount_pct"]
@@ -37,30 +39,48 @@ class ARIMADemandModel:
     def fit(self, train_df: pd.DataFrame):
         """Fits SARIMAX on demand series."""
         train_df = train_df.sort_values("date").reset_index(drop=True)
-        y = train_df["demand"].astype(float).values
+        y = pd.to_numeric(train_df["demand"], errors="coerce").to_numpy(dtype=float)
+        valid = np.isfinite(y)
+        train_df = train_df.loc[valid].reset_index(drop=True)
+        y = y[valid]
+
+        if len(y) < 3:
+            raise ValueError("ARIMA requires at least 3 valid demand observations.")
+
         exog = self._extract_exog(train_df)
+
+        # Short uploaded histories cannot reliably estimate weekly seasonal terms.
+        # Use a non-seasonal model for short series to avoid unstable extrapolation.
+        seasonal_order = self.seasonal_order if len(y) >= 28 else (0, 0, 0, 0)
 
         try:
             model = SARIMAX(
                 y,
                 exog=exog,
                 order=self.order,
-                seasonal_order=self.seasonal_order,
-                enforce_stationarity=False,
-                enforce_invertibility=False
+                seasonal_order=seasonal_order,
+                enforce_stationarity=True,
+                enforce_invertibility=True
             )
-            self.model_res = model.fit(disp=False, maxiter=100)
+            self.model_res = model.fit(disp=False, maxiter=200)
         except Exception:
-            # Fallback to simpler (1,1,1) if seasonal estimation fails
+            # Stable, simpler fallback for short or difficult series.
             model = SARIMAX(
                 y,
                 exog=exog,
-                order=(1, 1, 1),
+                order=(1, 0, 0),
                 seasonal_order=(0, 0, 0, 0),
-                enforce_stationarity=False,
-                enforce_invertibility=False
+                enforce_stationarity=True,
+                enforce_invertibility=True
             )
-            self.model_res = model.fit(disp=False, maxiter=50)
+            self.model_res = model.fit(disp=False, maxiter=100)
+
+        # Keep forecasts within a data-driven retail-demand range. This prevents
+        # unstable ARIMA extrapolation from dominating the dashboard scale.
+        demand_mean = float(np.mean(y))
+        demand_std = float(np.std(y))
+        observed_max = float(np.max(y))
+        self.demand_cap = max(observed_max * 3.0, demand_mean + 4.0 * demand_std, 1.0)
 
         self.last_date = train_df["date"].max()
         self.is_fitted = True
@@ -82,8 +102,13 @@ class ARIMADemandModel:
 
         result = pd.DataFrame()
         result["date"] = pd.to_datetime(future_df["date"].values)
-        result["yhat"] = np.maximum(yhat, 0.0)
-        result["yhat_lower"] = np.maximum(conf_int[:, 0], 0.0)
-        result["yhat_upper"] = np.maximum(conf_int[:, 1], 0.0)
+        cap = self.demand_cap if self.demand_cap is not None else np.inf
+        result["yhat"] = np.clip(np.asarray(yhat, dtype=float), 0.0, cap)
+        result["yhat_lower"] = np.clip(np.asarray(conf_int)[:, 0], 0.0, cap)
+        result["yhat_upper"] = np.clip(np.asarray(conf_int)[:, 1], 0.0, cap)
+
+        # Keep confidence intervals ordered after clipping.
+        result["yhat_lower"] = np.minimum(result["yhat_lower"], result["yhat"])
+        result["yhat_upper"] = np.maximum(result["yhat_upper"], result["yhat"])
 
         return result
