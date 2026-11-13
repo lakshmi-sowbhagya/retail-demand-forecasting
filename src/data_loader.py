@@ -67,6 +67,16 @@ def load_retail_data(file_path: Optional[Any] = None) -> pd.DataFrame:
     if "lead_time_std" not in df.columns:
         df["lead_time_std"] = 1.0
 
+    # Ensure revenue and gross margin are available for dashboard metrics.
+    if "revenue" not in df.columns:
+        df["revenue"] = df["demand"] * df["unit_price"]
+    else:
+        df["revenue"] = pd.to_numeric(df["revenue"], errors="coerce")
+        df["revenue"] = df["revenue"].fillna(df["demand"] * df["unit_price"])
+
+    if "gross_margin" not in df.columns:
+        df["gross_margin"] = df["revenue"] - (df["demand"] * df["unit_cost"])
+
     df = df.sort_values(["store_id", "sku_id", "date"]).reset_index(drop=True)
     return df
 
@@ -111,7 +121,21 @@ def train_test_split_temporal(
     Splits time series into train and test sets strictly chronologically.
     """
     sorted_df = df.sort_values("date").reset_index(drop=True)
-    cutoff_date = sorted_df["date"].max() - pd.Timedelta(days=test_days)
-    train_df = sorted_df[sorted_df["date"] <= cutoff_date].copy()
-    test_df = sorted_df[sorted_df["date"] > cutoff_date].copy()
+
+    # A requested calendar horizon can exceed the available history
+    # (for example, 60 requested days with only 31 uploaded rows).
+    # Keep enough observations for model training and always leave a test set.
+    n_rows = len(sorted_df)
+    if n_rows < 3:
+        raise ValueError(
+            "At least 3 valid records are required for a train/test split. "
+            "Please upload more historical sales data."
+        )
+
+    min_train_rows = min(14, n_rows - 1)
+    max_test_rows = max(1, n_rows - min_train_rows)
+    n_test_rows = min(max(1, int(test_days)), max_test_rows)
+
+    train_df = sorted_df.iloc[:-n_test_rows].copy()
+    test_df = sorted_df.iloc[-n_test_rows:].copy()
     return train_df, test_df
