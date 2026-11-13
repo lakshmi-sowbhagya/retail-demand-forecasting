@@ -78,6 +78,18 @@ with st.sidebar:
     st.markdown("---")
 
     uploaded_file = st.file_uploader("📂 Upload Custom Sales CSV (Optional)", type=["csv"])
+
+    # Provide ready-to-test template download in sidebar
+    template_path = os.path.join(ROOT_DIR, "data", "template_upload_sample.csv")
+    if os.path.exists(template_path):
+        with open(template_path, "rb") as fp:
+            st.download_button(
+                label="📄 Download Sample CSV to Test Upload",
+                data=fp,
+                file_name="sample_retail_upload_template.csv",
+                mime="text/csv",
+                help="Click to download a formatted CSV template to test custom file upload!"
+            )
     try:
         raw_df = get_cached_data(uploaded_file)
     except Exception as e:
