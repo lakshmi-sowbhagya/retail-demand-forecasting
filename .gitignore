@@ -1,0 +1,30 @@
+# Python virtual environment
+venv/
+env/
+.venv/
+ENV/
+
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyd
+
+# Temporary & Matplotlib cache
+.matplotlib/
+tmp/
+temp/
+*.log
+
+# Streamlit local credentials
+.streamlit/secrets.toml
+
+# IDE settings
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
